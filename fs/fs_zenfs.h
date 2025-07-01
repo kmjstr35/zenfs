@@ -147,7 +147,7 @@ class ZenFS : public FileSystemWrapper {
   std::shared_ptr<Logger> GetLogger() { return logger_; }
 
   std::unique_ptr<std::thread> gc_worker_ = nullptr;
-  bool run_gc_worker_ = false;
+  std::atomic<bool> run_gc_worker_ = false;
 
   struct ZenFSMetadataWriter : public MetadataWriter {
     ZenFS* zenFS;
