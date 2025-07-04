@@ -478,7 +478,13 @@ void ZoneFile::PushExtent() {
 
 IOStatus ZoneFile::AllocateNewZone() {
   Zone* zone;
-  IOStatus s = zbd_->AllocateIOZone(lifetime_, io_type_, &zone);
+  const auto filename = GetFilename();
+
+  auto lifetime_with = lifetime_;
+  if (filename[filename.size() - 1] == 'b') {
+    lifetime_with = Env::WriteLifeTimeHint::WLTH_NOT_SET;
+  }
+  IOStatus s = zbd_->AllocateIOZone(lifetime_with, io_type_, &zone);
 
   if (!s.ok()) return s;
   if (!zone) {

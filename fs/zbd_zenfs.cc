@@ -32,7 +32,7 @@
 #include "snapshot.h"
 #include "zbdlib_zenfs.h"
 #include "zonefs_zenfs.h"
-
+#include <cinttypes>
 #define KB (1024)
 #define MB (1024 * KB)
 
@@ -449,6 +449,8 @@ IOStatus ZonedBlockDevice::ResetUnusedIOZones() {
         if (!reset_status.ok()) return reset_status;
         if (!release_status.ok()) return release_status;
         if (!full) PutActiveIOZoneToken();
+        Info(logger_, "%s resetting zone which start up with 0x%" PRIx64, __FUNCTION__ ,z->start_);
+
       } else {
         IOStatus release_status = z->CheckRelease();
         if (!release_status.ok()) return release_status;
@@ -632,6 +634,17 @@ IOStatus ZonedBlockDevice::GetBestOpenZoneMatch(
 IOStatus ZonedBlockDevice::AllocateEmptyZone(Zone **zone_out) {
   IOStatus s;
   Zone *allocated_zone = nullptr;
+  enum Reason {
+    Busy,
+    NonEmpty,
+  };
+
+  const char *const msg[] = {
+      "Busy",
+      "NonEmpty",
+  };
+  
+  std::vector<Reason> reasons;
   for (const auto z : io_zones) {
     if (z->Acquire()) {
       if (z->IsEmpty()) {
@@ -640,10 +653,19 @@ IOStatus ZonedBlockDevice::AllocateEmptyZone(Zone **zone_out) {
       } else {
         s = z->CheckRelease();
         if (!s.ok()) return s;
+        reasons.push_back(NonEmpty);
       }
+    } else {
+      reasons.push_back(Busy);
     }
   }
   *zone_out = allocated_zone;
+  if (allocated_zone == nullptr) {
+    Info(logger_, "Allocation failed. All resources are busy or non-empty");
+    for (const auto r : reasons) {
+      Info(logger_, "failure reasons: %s", msg[r]);
+    }
+  }
   return IOStatus::OK();
 }
 

@@ -4,6 +4,7 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
+#include <cinttypes>
 #if !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
 #include "fs_zenfs.h"
@@ -279,6 +280,7 @@ void ZenFS::GCWorker() {
     ZenFSSnapshot snapshot;
     ZenFSSnapshotOptions options;
 
+    Info(logger_, "[GC WORKER] free ratio: %" PRIu64 ", gc threshold: %" PRIu64, free_percent, GC_START_LEVEL);
     if (free_percent > GC_START_LEVEL) continue;
 
     options.zone_ = 1;
@@ -292,7 +294,15 @@ void ZenFS::GCWorker() {
     for (const auto& zone : snapshot.zones_) {
       if (zone.capacity == 0) {
         uint64_t garbage_percent_approx =
-            100 - 100 * zone.used_capacity / zone.max_capacity;
+          100 - (100 * zone.used_capacity) / zone.max_capacity;
+
+
+        Info(logger_,
+             "[GC WORKER] zone slba: %" PRIu64 ", none-used: %" PRIu64
+             ", threshold: %" PRIu64,
+             zone.start, garbage_percent_approx,
+             threshold);
+
         if (garbage_percent_approx > threshold &&
             garbage_percent_approx < 100) {
           migrate_zones_start.emplace(zone.start);
@@ -1568,7 +1578,6 @@ std::map<std::string, Env::WriteLifeTimeHint> ZenFS::GetWriteLifeTimeHints() {
   return hint_map;
 }
 
-#if !defined(NDEBUG) || defined(WITH_TERARKDB)
 static std::string GetLogFilename(std::string bdev) {
   std::ostringstream ss;
   time_t t = time(0);
@@ -1579,7 +1588,6 @@ static std::string GetLogFilename(std::string bdev) {
   ss << DEFAULT_ZENV_LOG_PATH << std::string("zenfs_") << bdev << "_" << std::put_time(&log_start, "%Y-%m-%d_%H:%M:%S.log");;
   return ss.str();
 }
-#endif
 
 Status NewZenFS(FileSystem** fs, const std::string& bdevname,
                 std::shared_ptr<ZenFSMetrics> metrics) {
@@ -1597,7 +1605,6 @@ Status NewZenFS(FileSystem** fs, const ZbdBackendType backend_type,
   //
   // TODO(guokuankuan@bytedance.com) We need to figure out how to reuse
   // RocksDB's logger in the future.
-#if !defined(NDEBUG) || defined(WITH_TERARKDB)
   s = Env::Default()->NewLogger(GetLogFilename(backend_name), &logger);
   if (!s.ok()) {
     fprintf(stderr, "ZenFS: Could not create logger");
@@ -1607,7 +1614,6 @@ Status NewZenFS(FileSystem** fs, const ZbdBackendType backend_type,
     logger->SetInfoLogLevel(INFO_LEVEL);
 #endif
   }
-#endif
 
   ZonedBlockDevice* zbd =
       new ZonedBlockDevice(backend_name, backend_type, logger, metrics);
