@@ -4,6 +4,7 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
+#include "plugin/zenfs/fs/fs_zenfs.h"
 #if !defined(ROCKSDB_LITE) && !defined(OS_WIN)
 
 #include "io_zenfs.h"
@@ -238,7 +239,7 @@ Status ZoneFile::MergeUpdate(std::shared_ptr<ZoneFile> update, bool replace) {
 }
 
 ZoneFile::ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id,
-                   MetadataWriter* metadata_writer)
+                   MetadataWriter* metadata_writer, ZenFS* fs)
     : zbd_(zbd),
       active_zone_(NULL),
       extent_start_(NO_EXTENT),
@@ -249,7 +250,8 @@ ZoneFile::ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id,
       file_id_(file_id),
       nr_synced_extents_(0),
       m_time_(0),
-      metadata_writer_(metadata_writer) {}
+      metadata_writer_(metadata_writer),
+      fs_{fs} {}
 
 std::string ZoneFile::GetFilename() { return linkfiles_[0]; }
 time_t ZoneFile::GetFileModificationTime() { return m_time_; }
@@ -480,14 +482,11 @@ IOStatus ZoneFile::AllocateNewZone() {
   Zone* zone;
   const auto filename = GetFilename();
 
-  auto lifetime_with = lifetime_;
-  if (filename[filename.size() - 1] == 'b') {
-    lifetime_with = Env::WriteLifeTimeHint::WLTH_NOT_SET;
-  }
-  IOStatus s = zbd_->AllocateIOZone(lifetime_with, io_type_, &zone);
+  IOStatus s = zbd_->AllocateIOZone(GetWriteLifeTimeHint(), io_type_, &zone);
 
   if (!s.ok()) return s;
   if (!zone) {
+    this->fs_->get_alloc_error() = true;
     return IOStatus::NoSpace("Zone allocation failure\n");
   }
   SetActiveZone(zone);

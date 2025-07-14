@@ -40,7 +40,7 @@ class ZoneExtent {
 };
 
 class ZoneFile;
-
+class ZenFS;
 /* Interface for persisting metadata for files */
 class MetadataWriter {
  public:
@@ -83,7 +83,8 @@ class ZoneFile {
   static const int SPARSE_HEADER_SIZE = 8;
 
   explicit ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id_,
-                    MetadataWriter* metadata_writer);
+                    MetadataWriter* metadata_writer,
+                    ZenFS *fs);
 
   virtual ~ZoneFile();
 
@@ -152,7 +153,8 @@ class ZoneFile {
 
   IOStatus InvalidateCache(uint64_t pos, uint64_t size);
 
- private:
+private:
+  ZenFS *fs_;
   void ReleaseActiveZone();
   void SetActiveZone(Zone* zone);
   IOStatus CloseActiveZone();

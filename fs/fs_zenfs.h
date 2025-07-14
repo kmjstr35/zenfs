@@ -147,6 +147,7 @@ class ZenFS : public FileSystemWrapper {
   std::shared_ptr<Logger> GetLogger() { return logger_; }
 
   std::unique_ptr<std::thread> gc_worker_ = nullptr;
+  std::unique_ptr<std::thread> stat_logger_ = nullptr; // logging filesystem-wide stats if needed
   std::atomic<bool> run_gc_worker_ = false;
 
   struct ZenFSMetadataWriter : public MetadataWriter {
@@ -458,11 +459,15 @@ class ZenFS : public FileSystemWrapper {
       const std::string& fname,
       const std::vector<ZoneExtentSnapshot*>& migrate_exts);
 
+  std::atomic<bool>& get_alloc_error() { return alloc_error_; };
  private:
   const uint64_t GC_START_LEVEL =
       20;                      /* Enable GC when < 20% free space available */
   const uint64_t GC_SLOPE = 3; /* GC agressiveness */
   void GCWorker();
+  std::atomic<bool> enable_stat_logger_ = true;
+  std::atomic<bool> alloc_error_ = false;
+  void StatLogger();
 };
 #endif  // !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 

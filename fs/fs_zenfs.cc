@@ -5,6 +5,7 @@
 //  (found in the LICENSE.Apache file in the root directory).
 
 #include <cinttypes>
+#include <mutex>
 #if !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
 #include "fs_zenfs.h"
@@ -265,9 +266,31 @@ ZenFS::~ZenFS() {
     gc_worker_->join();
   }
 
+  if (stat_logger_) {
+    enable_stat_logger_ = false;
+    stat_logger_->join();
+  }
+
   meta_log_.reset(nullptr);
   ClearFiles();
   delete zbd_;
+}
+void ZenFS::StatLogger() {
+  while (enable_stat_logger_) {
+    usleep(1000 * 1000);
+    uint64_t non_free = zbd_->GetUsedSpace() + zbd_->GetReclaimableSpace();
+    uint64_t free = zbd_->GetFreeSpace();
+    uint64_t free_percent = (100 * free) / (free + non_free);
+
+    Info(logger_, "[StatLogger] free ratio: %" PRIu64, free_percent);
+
+    if (alloc_error_) {
+      std::scoped_lock guard{this->files_mtx_};
+      Info(logger_, "[StatLogger] alloc fail detected. start logging fs status");
+      this->LogFiles();
+      alloc_error_ = false;
+    }
+  }
 }
 
 void ZenFS::GCWorker() {
@@ -280,7 +303,6 @@ void ZenFS::GCWorker() {
     ZenFSSnapshot snapshot;
     ZenFSSnapshotOptions options;
 
-    Info(logger_, "[GC WORKER] free ratio: %" PRIu64 ", gc threshold: %" PRIu64, free_percent, GC_START_LEVEL);
     if (free_percent > GC_START_LEVEL) continue;
 
     options.zone_ = 1;
@@ -296,12 +318,6 @@ void ZenFS::GCWorker() {
         uint64_t garbage_percent_approx =
           100 - (100 * zone.used_capacity) / zone.max_capacity;
 
-
-        Info(logger_,
-             "[GC WORKER] zone slba: %" PRIu64 ", none-used: %" PRIu64
-             ", threshold: %" PRIu64,
-             zone.start, garbage_percent_approx,
-             threshold);
 
         if (garbage_percent_approx > threshold &&
             garbage_percent_approx < 100) {
@@ -352,6 +368,9 @@ void ZenFS::LogFiles() {
   std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   uint64_t total_size = 0;
 
+  // (zone number, (lifetimehint, len, filename))
+  std::map<std::uint64_t, std::vector<std::tuple<unsigned, size_t, std::string>>> zone_lifetime_info;
+
   Info(logger_, "  Files:\n");
   for (it = files_.begin(); it != files_.end(); it++) {
     std::shared_ptr<ZoneFile> zFile = it->second;
@@ -368,10 +387,27 @@ void ZenFS::LogFiles() {
            extent->length_);
 
       total_size += extent->length_;
+      const uint64_t zone_id = (extent->zone_->start_ / zbd_->GetZoneSize());
+      zone_lifetime_info[zone_id]
+          .emplace_back(std::make_tuple(zFile->GetWriteLifeTimeHint(), extent->length_,
+                        it->first));
     }
   }
   Info(logger_, "Sum of all files: %lu MB of data \n",
        total_size / (1024 * 1024));
+
+  Info(logger_, ":Zone Lifetime info: \n");
+  for (auto& [zoneid, chunks] : zone_lifetime_info) {
+    Info(logger_, "zoneid: %" PRIu64, zoneid);
+    
+    std::sort(chunks.begin(), chunks.end(), std::greater{});
+    for (const auto& [lifetime, length, fname] : chunks) {
+      Info(logger_, "\tlifetime: %u, ratio: %g, filename: %s, extent_size: %" PRIu64,
+           lifetime,
+           (double)length / zbd_->GetZoneSize(), fname.c_str(), length);
+    }
+  }
+
 }
 
 void ZenFS::ClearFiles() {
@@ -855,7 +891,7 @@ IOStatus ZenFS::OpenWritableFile(const std::string& filename,
     }
 
     zoneFile =
-        std::make_shared<ZoneFile>(zbd_, next_file_id_++, &metadata_writer_);
+      std::make_shared<ZoneFile>(zbd_, next_file_id_++, &metadata_writer_, this);
     zoneFile->SetFileModificationTime(time(0));
     zoneFile->AddLinkName(fname);
 
@@ -1173,7 +1209,7 @@ void ZenFS::EncodeJson(std::ostream& json_stream) {
 }
 
 Status ZenFS::DecodeFileUpdateFrom(Slice* slice, bool replace) {
-  std::shared_ptr<ZoneFile> update(new ZoneFile(zbd_, 0, &metadata_writer_));
+  std::shared_ptr<ZoneFile> update(new ZoneFile(zbd_, 0, &metadata_writer_, this));
   uint64_t id;
   Status s;
 
@@ -1220,7 +1256,7 @@ Status ZenFS::DecodeSnapshotFrom(Slice* input) {
 
   while (GetLengthPrefixedSlice(input, &slice)) {
     std::shared_ptr<ZoneFile> zoneFile(
-        new ZoneFile(zbd_, 0, &metadata_writer_));
+				       new ZoneFile(zbd_, 0, &metadata_writer_, this));
     Status s = zoneFile->DecodeFrom(&slice);
     if (!s.ok()) return s;
 
@@ -1496,6 +1532,7 @@ Status ZenFS::Mount(bool readonly) {
       run_gc_worker_ = true;
       gc_worker_.reset(new std::thread(&ZenFS::GCWorker, this));
     }
+    stat_logger_.reset(new std::thread(&ZenFS::StatLogger, this));
   }
 
   LogFiles();
@@ -1775,8 +1812,14 @@ IOStatus ZenFS::MigrateFileExtents(
     const std::string& fname,
     const std::vector<ZoneExtentSnapshot*>& migrate_exts) {
   IOStatus s = IOStatus::OK();
-  Info(logger_, "MigrateFileExtents, fname: %s, extent count: %lu",
-       fname.data(), migrate_exts.size());
+
+  size_t moved_data = 0;
+  for (const auto& extent : migrate_exts) {
+    moved_data += extent->length;
+  }
+  
+  Info(logger_, "MigrateFileExtents, fname: %s, extent count: %lu, total data moved: %zu",
+       fname.data(), migrate_exts.size(), moved_data);
 
   // The file may be deleted by other threads, better double check.
   auto zfile = GetFile(fname);
