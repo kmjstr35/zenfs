@@ -1794,7 +1794,7 @@ IOStatus ZenFS::MigrateExtents(
   for (auto* ext : extents) {
     std::string fname = ext->filename;
     // We only migrate SST file extents
-    if (ends_with(fname, ".sst")) {
+    if (ends_with(fname, ".sst") || ends_with(fname, ".blob")) {
       file_extents[fname].emplace_back(ext);
     }
   }
