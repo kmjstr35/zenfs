@@ -1617,12 +1617,8 @@ std::map<std::string, Env::WriteLifeTimeHint> ZenFS::GetWriteLifeTimeHints() {
 
 static std::string GetLogFilename(std::string bdev) {
   std::ostringstream ss;
-  time_t t = time(0);
   
-  std::tm log_start;
-  localtime_r(&t, &log_start);
-  
-  ss << DEFAULT_ZENV_LOG_PATH << std::string("zenfs_") << bdev << "_" << std::put_time(&log_start, "%Y-%m-%d_%H:%M:%S.log");;
+  ss << DEFAULT_ZENV_LOG_PATH << std::string("zenfs_") << bdev << ".log";
   return ss.str();
 }
 
