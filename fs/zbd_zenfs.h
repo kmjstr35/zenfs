@@ -193,6 +193,17 @@ class ZonedBlockDevice {
   std::string GetFilename();
   uint32_t GetBlockSize();
 
+  size_t GetNumIoZone() const { return io_zones.size(); }
+
+  size_t GetNumEmptyIoZone() const {
+    size_t ret = 0;
+    for (const auto &zone : io_zones) {
+      if (!zone->IsBusy() && zone->IsEmpty())
+	++ret;
+    }
+
+    return ret;
+  }
   IOStatus ResetUnusedIOZones();
   void LogZoneStats();
   void LogZoneUsage();
