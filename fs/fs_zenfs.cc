@@ -5,6 +5,7 @@
 //  (found in the LICENSE.Apache file in the root directory).
 
 #include <cinttypes>
+#include <cstdlib>
 #include <mutex>
 #if !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
@@ -251,12 +252,25 @@ ZenFS::ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
        zbd_->GetFilename().c_str(), target()->Name());
 
   Info(logger_, "ZenFS initializing");
+
+  const char* period_env = getenv("ZENFS_STATLOGGER_PERIOD");
+  
+  if (!period_env) {
+    Info(logger, "ZENFS_STATLOGGER_PERIOD is not set, fallback as default(1s).");
+  } else {
+    const uint32_t period = static_cast<uint32_t>(std::stoul(period_env));
+    statlogger_period = period;
+  }
+
   next_file_id_ = 1;
   metadata_writer_.zenFS = this;
 }
 
 ZenFS::~ZenFS() {
   Status s;
+  Info(logger_, "user written data :%" PRIu64, zbd_->GetUserBytesWritten());
+  Info(logger_, "total written data :%" PRIu64, zbd_->GetTotalBytesWritten());
+  Info(logger_, "write amplification :%.5g", (double)zbd_->GetTotalBytesWritten() /  zbd_->GetUserBytesWritten());
   Info(logger_, "ZenFS shutting down");
   zbd_->LogZoneUsage();
   LogFiles();
@@ -277,19 +291,15 @@ ZenFS::~ZenFS() {
 }
 void ZenFS::StatLogger() {
   while (enable_stat_logger_) {
-    usleep(1000 * 1000);
+    usleep(statlogger_period * 1000 * 1000);
     uint64_t non_free = zbd_->GetUsedSpace() + zbd_->GetReclaimableSpace();
     uint64_t free = zbd_->GetFreeSpace();
     uint64_t free_percent = (100 * free) / (free + non_free);
 
     Info(logger_, "[StatLogger] free ratio: %" PRIu64, free_percent);
 
-    if (alloc_error_) {
-      std::scoped_lock guard{this->files_mtx_};
-      Info(logger_, "[StatLogger] alloc fail detected. start logging fs status");
-      this->LogFiles();
-      alloc_error_ = false;
-    }
+    Info(logger_, "[StatLogger] start logging fs status");
+    this->LogFiles();
   }
 }
 
@@ -366,17 +376,18 @@ std::string ZenFS::FormatPathLexically(fs::path filepath) {
   return ret.string();
 }
 
+// This function hold files_mtx
 void ZenFS::LogFiles() {
-  std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   uint64_t total_size = 0;
+  std::scoped_lock guard(files_mtx_);
 
   // (zone number, (lifetimehint, len, filename))
   std::map<std::uint64_t, std::vector<std::tuple<unsigned, size_t, std::string>>> zone_lifetime_info;
 
   Info(logger_, "  Files:\n");
-  for (it = files_.begin(); it != files_.end(); it++) {
+  for (auto it = files_.begin(); it != files_.end(); it++) {
     std::shared_ptr<ZoneFile> zFile = it->second;
-    std::vector<ZoneExtent*> extents = zFile->GetExtents();
+    const std::vector<ZoneExtent*>& extents = zFile->GetExtents();
 
     Info(logger_, "    %-45s sz: %lu lh: %d sparse: %u", it->first.c_str(),
          zFile->GetFileSize(), zFile->GetWriteLifeTimeHint(),
@@ -410,6 +421,7 @@ void ZenFS::LogFiles() {
     }
   }
 
+  Info(logger_, "Zone summary: num_free' %zu\n", zbd_->GetNumEmptyIoZone());
 }
 
 void ZenFS::ClearFiles() {
@@ -673,7 +685,7 @@ IOStatus ZenFS::NewRandomAccessFile(const std::string& filename,
   return IOStatus::OK();
 }
 
-inline bool ends_with(std::string const& value, std::string const& ending) {
+bool ends_with(std::string const& value, std::string const& ending) {
   if (ending.size() > value.size()) return false;
   return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
@@ -1451,7 +1463,7 @@ Status ZenFS::Mount(bool readonly) {
   /* Recover from the zone with the highest superblock sequence number.
      If that fails go to the previous as we might have crashed when rolling
      metadata zone.
-  */
+   */
   for (const auto& sm : seq_map) {
     uint32_t i = sm.second;
     std::string scratch;
@@ -1536,7 +1548,6 @@ Status ZenFS::Mount(bool readonly) {
     }
     stat_logger_.reset(new std::thread(&ZenFS::StatLogger, this));
   }
-
   LogFiles();
 
   return Status::OK();
@@ -1803,21 +1814,14 @@ IOStatus ZenFS::MigrateExtents(
     s = zbd_->ResetUnusedIOZones();
     if (!s.ok()) break;
   }
-  return s;
-}
+  return s;}
+
 
 IOStatus ZenFS::MigrateFileExtents(
     const std::string& fname,
     const std::vector<ZoneExtentSnapshot*>& migrate_exts) {
   IOStatus s = IOStatus::OK();
 
-  size_t moved_data = 0;
-  for (const auto& extent : migrate_exts) {
-    moved_data += extent->length;
-  }
-  
-  Info(logger_, "MigrateFileExtents, fname: %s, extent count: %lu, total data moved: %zu",
-       fname.data(), migrate_exts.size(), moved_data);
 
   // The file may be deleted by other threads, better double check.
   auto zfile = GetFile(fname);

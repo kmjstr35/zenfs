@@ -459,14 +459,13 @@ class ZenFS : public FileSystemWrapper {
       const std::string& fname,
       const std::vector<ZoneExtentSnapshot*>& migrate_exts);
 
-  std::atomic<bool>& get_alloc_error() { return alloc_error_; };
  private:
   const uint64_t GC_START_LEVEL =
       20;                      /* Enable GC when < 20% free space available */
   const uint64_t GC_SLOPE = 3; /* GC agressiveness */
   void GCWorker();
   std::atomic<bool> enable_stat_logger_ = true;
-  std::atomic<bool> alloc_error_ = false;
+  uint32_t statlogger_period = 5;
   void StatLogger();
 };
 #endif  // !defined(ROCKSDB_LITE) && defined(OS_LINUX)
