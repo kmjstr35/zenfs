@@ -482,11 +482,10 @@ IOStatus ZoneFile::AllocateNewZone() {
   Zone* zone;
   const auto filename = GetFilename();
 
-  IOStatus s = zbd_->AllocateIOZone(GetWriteLifeTimeHint(), io_type_, &zone);
+  IOStatus s = zbd_->AllocateIOZone(GetWriteLifeTimeHint(), io_type_, &zone, filename);
 
   if (!s.ok()) return s;
   if (!zone) {
-    this->fs_->get_alloc_error() = true;
     return IOStatus::NoSpace("Zone allocation failure\n");
   }
   SetActiveZone(zone);
@@ -781,7 +780,10 @@ IOStatus ZoneFile::RemoveLinkName(const std::string& linkf) {
 
 IOStatus ZoneFile::SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime) {
   lifetime_ = lifetime;
-  return IOStatus::OK();
+  if (ends_with(GetFilename(), "sst")) {
+    lifetime_ = Env::WLTH_NONE;
+  }
+ return IOStatus::OK();
 }
 
 void ZoneFile::ReleaseActiveZone() {

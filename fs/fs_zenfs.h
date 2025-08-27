@@ -481,6 +481,7 @@ Status AppendZenFileSystem(
     std::string path, ZbdBackendType backend,
     std::map<std::string, std::pair<std::string, ZbdBackendType>>& fs_list);
 Status ListZenFileSystems(
-    std::map<std::string, std::pair<std::string, ZbdBackendType>>& out_list);
+			  std::map<std::string, std::pair<std::string, ZbdBackendType>>& out_list);
+bool ends_with(std::string const& value, std::string const& ending);
 
 }  // namespace ROCKSDB_NAMESPACE

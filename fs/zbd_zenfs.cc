@@ -32,6 +32,7 @@
 #include "snapshot.h"
 #include "zbdlib_zenfs.h"
 #include "zonefs_zenfs.h"
+#include "fs_zenfs.h"
 #include <cinttypes>
 #define KB (1024)
 #define MB (1024 * KB)
@@ -399,15 +400,16 @@ unsigned int GetLifeTimeDiff(Env::WriteLifeTimeHint zone_lifetime,
 
   if ((file_lifetime == Env::WLTH_NOT_SET) ||
       (file_lifetime == Env::WLTH_NONE)) {
-    if (file_lifetime == zone_lifetime) {
+    if ((zone_lifetime == Env::WLTH_NOT_SET) ||
+	(zone_lifetime == Env::WLTH_NONE)) {
       return 0;
     } else {
-      return LIFETIME_DIFF_NOT_GOOD;
+      return LIFETIME_DIFF_COULD_BE_WORSE;
     }
   }
 
-  if (zone_lifetime > file_lifetime) return zone_lifetime - file_lifetime;
-  if (zone_lifetime == file_lifetime) return LIFETIME_DIFF_COULD_BE_WORSE;
+  if (zone_lifetime > file_lifetime) return LIFETIME_DIFF_NOT_GOOD;
+  if (zone_lifetime == file_lifetime) return 0;
 
   return LIFETIME_DIFF_NOT_GOOD;
 }
@@ -720,7 +722,8 @@ IOStatus ZonedBlockDevice::TakeMigrateZone(Zone **out_zone,
 }
 
 IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
-                                          IOType io_type, Zone **out_zone) {
+                                          IOType io_type, Zone **out_zone,
+                                          const std::string& filename) {
   Zone *allocated_zone = nullptr;
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
@@ -735,6 +738,7 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
       tag = ZENFS_NON_WAL_IO_ALLOC_LATENCY;
     }
   }
+
 
   ZenFSMetricsLatencyGuard guard(metrics_, tag, Env::Default());
   metrics_->ReportQPS(ZENFS_IO_ALLOC_QPS, 1);

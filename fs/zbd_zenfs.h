@@ -171,7 +171,8 @@ class ZonedBlockDevice {
   void EncodeJsonZone(std::ostream &json_stream,
                       const std::vector<Zone *> zones);
 
- public:
+public:
+  
   explicit ZonedBlockDevice(std::string path, ZbdBackendType backend,
                             std::shared_ptr<Logger> logger,
                             std::shared_ptr<ZenFSMetrics> metrics =
@@ -183,7 +184,8 @@ class ZonedBlockDevice {
   Zone *GetIOZone(uint64_t offset);
 
   IOStatus AllocateIOZone(Env::WriteLifeTimeHint file_lifetime, IOType io_type,
-                          Zone **out_zone);
+                          Zone **out_zone,
+                          const std::string& filename);
   IOStatus AllocateMetaZone(Zone **out_meta_zone);
 
   uint64_t GetFreeSpace();
