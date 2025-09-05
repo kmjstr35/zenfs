@@ -7,6 +7,7 @@
 #include <cinttypes>
 #include <cstdlib>
 #include <mutex>
+#include "util/mutexlock.h"
 #if !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
 #include "fs_zenfs.h"
@@ -387,7 +388,12 @@ void ZenFS::LogFiles() {
   Info(logger_, "  Files:\n");
   for (auto it = files_.begin(); it != files_.end(); it++) {
     std::shared_ptr<ZoneFile> zFile = it->second;
-    const std::vector<ZoneExtent*>& extents = zFile->GetExtents();
+    
+    const std::vector<ZoneExtent*>& extents = [&]() {
+      
+      ZoneFile::ReadLock file_guard(zFile.get());
+      return zFile->GetExtents();
+    }();
 
     Info(logger_, "    %-45s sz: %lu lh: %d sparse: %u", it->first.c_str(),
          zFile->GetFileSize(), zFile->GetWriteLifeTimeHint(),
@@ -400,8 +406,8 @@ void ZenFS::LogFiles() {
            extent->length_);
 
       total_size += extent->length_;
-      const uint64_t zone_id = (extent->zone_->start_ / zbd_->GetZoneSize());
-      zone_lifetime_info[zone_id]
+      const uint64_t zone_start = extent->zone_->start_;
+      zone_lifetime_info[zone_start]
           .emplace_back(std::make_tuple(zFile->GetWriteLifeTimeHint(), extent->length_,
                         it->first));
     }
@@ -410,8 +416,14 @@ void ZenFS::LogFiles() {
        total_size / (1024 * 1024));
 
   Info(logger_, ":Zone Lifetime info: \n");
-  for (auto& [zoneid, chunks] : zone_lifetime_info) {
-    Info(logger_, "zoneid: %" PRIu64, zoneid);
+  for (auto& [zone_start, chunks] : zone_lifetime_info) {
+
+    const auto current_zone = zbd_->GetIOZone(zone_start);
+    const auto zoneid = zone_start / zbd_->GetZoneSize();
+    Info(logger_, "zoneid: %" PRIu64 ", zone lifetime: %d",
+         zoneid,
+         current_zone->lifetime_);
+    
     
     std::sort(chunks.begin(), chunks.end(), std::greater{});
     for (const auto& [lifetime, length, fname] : chunks) {
@@ -419,6 +431,13 @@ void ZenFS::LogFiles() {
            lifetime,
            (double)length / zbd_->GetZoneSize(), fname.c_str(), length);
     }
+
+
+    const auto zone_total_usage = current_zone->wp_ - current_zone->start_;
+    const auto invalid = (zone_total_usage - current_zone->used_capacity_);
+    
+    Info(logger_, "invalid data size :%" PRIu64 ", ratio: %g",
+         invalid, static_cast<double>(invalid) / zone_total_usage);
   }
 
   Info(logger_, "Zone summary: num_free' %zu\n", zbd_->GetNumEmptyIoZone());
@@ -1546,6 +1565,7 @@ Status ZenFS::Mount(bool readonly) {
       run_gc_worker_ = true;
       gc_worker_.reset(new std::thread(&ZenFS::GCWorker, this));
     }
+    enable_stat_logger_ = true;
     stat_logger_.reset(new std::thread(&ZenFS::StatLogger, this));
   }
   LogFiles();

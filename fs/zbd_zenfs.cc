@@ -648,9 +648,6 @@ IOStatus ZonedBlockDevice::AllocateEmptyZone(Zone **zone_out) {
     }
   }
   *zone_out = allocated_zone;
-  if (allocated_zone == nullptr) {
-    Info(logger_, "Allocation failed. All resources are busy or non-empty");
-  }
   
   return IOStatus::OK();
 }
@@ -825,6 +822,7 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
           new_zone, allocated_zone->start_, allocated_zone->wp_,
           allocated_zone->lifetime_, file_lifetime);
   } else {
+    Debug(logger_, "Allocation failed. file lt: %d\n", file_lifetime);
     PutOpenIOZoneToken();
   }
 
