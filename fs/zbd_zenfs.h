@@ -35,7 +35,8 @@ class ZonedBlockDevice;
 class ZonedBlockDeviceBackend;
 class ZoneSnapshot;
 class ZenFSSnapshotOptions;
-
+class ZenFS;
+  
 class ZoneList {
  private:
   void *data_;
@@ -172,7 +173,7 @@ class ZonedBlockDevice {
                       const std::vector<Zone *> zones);
 
 public:
-  
+  ZenFS* zenfs_ptr;
   explicit ZonedBlockDevice(std::string path, ZbdBackendType backend,
                             std::shared_ptr<Logger> logger,
                             std::shared_ptr<ZenFSMetrics> metrics =

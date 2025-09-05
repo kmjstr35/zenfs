@@ -459,6 +459,7 @@ class ZenFS : public FileSystemWrapper {
       const std::string& fname,
       const std::vector<ZoneExtentSnapshot*>& migrate_exts);
 
+  std::atomic<bool> alloc_error = false;
  private:
   const uint64_t GC_START_LEVEL =
       20;                      /* Enable GC when < 20% free space available */

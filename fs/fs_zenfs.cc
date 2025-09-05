@@ -252,6 +252,7 @@ ZenFS::ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
   Info(logger_, "ZenFS parameters: block device: %s, aux filesystem: %s",
        zbd_->GetFilename().c_str(), target()->Name());
 
+  zbd_->zenfs_ptr = this;
   Info(logger_, "ZenFS initializing");
 
   const char* period_env = getenv("ZENFS_STATLOGGER_PERIOD");
@@ -290,17 +291,25 @@ ZenFS::~ZenFS() {
   ClearFiles();
   delete zbd_;
 }
-void ZenFS::StatLogger() {
+void ZenFS::
+    StatLogger() {
+  uint64_t time = 0;
   while (enable_stat_logger_) {
-    usleep(statlogger_period * 1000 * 1000);
-    uint64_t non_free = zbd_->GetUsedSpace() + zbd_->GetReclaimableSpace();
-    uint64_t free = zbd_->GetFreeSpace();
-    uint64_t free_percent = (100 * free) / (free + non_free);
+    usleep(1 * 1000 * 1000);
 
-    Info(logger_, "[StatLogger] free ratio: %" PRIu64, free_percent);
+    if ((time % statlogger_period == 0) || alloc_error) {
+      const char* reason = alloc_error? "alloc error":"period";
+      uint64_t non_free = zbd_->GetUsedSpace() + zbd_->GetReclaimableSpace();
+      uint64_t free = zbd_->GetFreeSpace();
+      uint64_t free_percent = (100 * free) / (free + non_free);
+      Info(logger_, "[StatLogger] reason: %s", reason);
+      Info(logger_, "[StatLogger] free ratio: %" PRIu64, free_percent);
+      Info(logger_, "[StatLogger] start logging fs status");
+      this->LogFiles();
+    }
 
-    Info(logger_, "[StatLogger] start logging fs status");
-    this->LogFiles();
+    time += 1;
+    if(alloc_error) alloc_error = false;
   }
 }
 
