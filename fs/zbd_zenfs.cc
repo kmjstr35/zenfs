@@ -823,6 +823,7 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
           allocated_zone->lifetime_, file_lifetime);
   } else {
     Debug(logger_, "Allocation failed. file lt: %d\n", file_lifetime);
+    zenfs_ptr->SetAllocError(true);
     PutOpenIOZoneToken();
   }
 
