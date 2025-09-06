@@ -299,11 +299,7 @@ void ZenFS::
 
     if ((time % statlogger_period == 0) || alloc_error) {
       const char* reason = alloc_error? "alloc error":"period";
-      uint64_t non_free = zbd_->GetUsedSpace() + zbd_->GetReclaimableSpace();
-      uint64_t free = zbd_->GetFreeSpace();
-      uint64_t free_percent = (100 * free) / (free + non_free);
       Info(logger_, "[StatLogger] reason: %s", reason);
-      Info(logger_, "[StatLogger] free ratio: %" PRIu64, free_percent);
       Info(logger_, "[StatLogger] start logging fs status");
       this->LogFiles();
     }

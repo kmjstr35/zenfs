@@ -189,6 +189,14 @@ public:
                           const std::string& filename);
   IOStatus AllocateMetaZone(Zone **out_meta_zone);
 
+  uint64_t GetTotalIoSpace() const {
+    uint64_t ret = 0;
+    for (const auto zone : io_zones) {
+      ret += zone->max_capacity_;
+    }
+
+    return ret;
+  }
   uint64_t GetFreeSpace();
   uint64_t GetUsedSpace();
   uint64_t GetReclaimableSpace();

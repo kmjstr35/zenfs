@@ -317,11 +317,14 @@ void ZonedBlockDevice::LogZoneStats() {
 
   Info(logger_,
        "[Zonestats:time(s),used_cap(MB),reclaimable_cap(MB), "
-       "avg_reclaimable(%%), active(#), active_zones(#), open_zones(#)] %ld "
-       "%lu %lu %lu %lu %ld %ld\n",
+       "avg_reclaimable(%%), active(#), active_zones(#), open_zones(#), "
+       "empty_zones(#), free_space(%%)] %ld "
+       "%lu %lu %lu %lu %ld %ld %lu %lu \n",
        time(NULL) - start_time_, used_capacity / MB, reclaimable_capacity / MB,
        100 * reclaimable_capacity / reclaimables_max_capacity, active,
-       active_io_zones_.load(), open_io_zones_.load());
+       active_io_zones_.load(), open_io_zones_.load(),
+       this->GetNumEmptyIoZone(),
+       this->GetFreeSpace() * 100 / this->GetTotalIoSpace());
 }
 
 void ZonedBlockDevice::LogZoneUsage() {
