@@ -445,7 +445,7 @@ void ZenFS::LogFiles() {
     [&](const auto& extents) {
       std::ostringstream ss;
 
-      ss << "{extent_info: [";
+      ss << "{\"extent_info\": [";
       for (size_t i = 0; i < extents.size(); ++i) {
         const auto& [lifetime, length, fname] = extents[i];
         ss << "{\"lifetime\": " << lifetime << ", \"size\": "
@@ -453,7 +453,7 @@ void ZenFS::LogFiles() {
         if (i == extents.size() - 1) ss << "}";
         else ss << "}, ";
       }
-      ss << "], zoneid: " << zoneid << "}";
+      ss << "], \"zoneid\": " << zoneid << "}";
 
       Info(logger_, "[StatLogger] extent info: %s", ss.str().c_str());
     }(chunks);
