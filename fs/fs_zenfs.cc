@@ -439,13 +439,10 @@ void ZenFS::LogFiles() {
       ss << "[";
       for (size_t i = 0; i < extents.size(); ++i) {
         const auto& [lifetime, length, fname] = extents[i];
-        ss << "{\"lifetime\": " << lifetime << ", \"extent_size\": " << length;
+        ss << "{\"lf\": " << lifetime << ", \"sz\": " << length;
         if (i == extents.size() - 1) ss << "}";
         else ss << "}, ";
-	// Info(logger_, "\tlifetime: %u, ratio: %g, filename: %s, extent_size: %" PRIu64,
-        //      lifetime,
-        //      (double)length / zbd_->GetZoneSize(), fname.c_str(), length);
-      }
+     }
 
       ss << "]";
       
@@ -454,8 +451,8 @@ void ZenFS::LogFiles() {
     }(chunks);
 
     ss << "{ \"id\": " << zoneid
-       << ", \"lifetime\": " << current_zone->lifetime_
-    << ", \"extents\": " << extent_info_str
+       << ", \"lf\": " << current_zone->lifetime_
+    << ", \"extnt\": " << extent_info_str
     << ", \"invalid\" :" << invalid;
 
     if (it != std::prev(zone_lifetime_info.cend())) ss << "}, ";
