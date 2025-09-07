@@ -420,10 +420,8 @@ void ZenFS::LogFiles() {
   Info(logger_, "Sum of all files: %lu MB of data \n",
        total_size / (1024 * 1024));
 
-  Info(logger_, ":Zone Lifetime info: \n");
 
   std::ostringstream ss;
-  ss << "[";
   for (auto it = zone_lifetime_info.cbegin(); it != zone_lifetime_info.cend();
        ++it) {
     const auto& [zone_start, chunks] = *it;
@@ -434,37 +432,33 @@ void ZenFS::LogFiles() {
     const auto zone_total_usage = current_zone->wp_ - current_zone->start_;
     const auto invalid = (zone_total_usage - current_zone->used_capacity_);
 
-    const auto extent_info_str = [&](const auto& extents) {
-      std::ostringstream ss;
-      ss << "[";
-      for (size_t i = 0; i < extents.size(); ++i) {
-        const auto& [lifetime, length, fname] = extents[i];
-        ss << "{\"lf\": " << lifetime << ", \"sz\": " << length;
-        if (i == extents.size() - 1) ss << "}";
-        else ss << "}, ";
-     }
-
-      ss << "]";
-      
-
-      return ss.str();
-    }(chunks);
 
     ss << "{ \"id\": " << zoneid
-       << ", \"lf\": " << current_zone->lifetime_
-    << ", \"extnt\": " << extent_info_str
+       << ", \"lifetime\": " << current_zone->lifetime_
     << ", \"invalid\" :" << invalid;
 
     if (it != std::prev(zone_lifetime_info.cend())) ss << "}, ";
-    else ss << "}";
+    else
+      ss << "}";
+    Info(logger_, "[StatLogger] summary for zone stats: %s", ss.str().c_str());
 
+
+    [&](const auto& extents) {
+      std::ostringstream ss;
+
+      ss << "{extent_info: [";
+      for (size_t i = 0; i < extents.size(); ++i) {
+        const auto& [lifetime, length, fname] = extents[i];
+        ss << "{\"lifetime\": " << lifetime << ", \"size\": "
+        << length;
+        if (i == extents.size() - 1) ss << "}";
+        else ss << "}, ";
+      }
+      ss << "], zoneid: " << zoneid;
+
+      Info(logger_, "[StatLogger] extent info: %s", ss.str().c_str());
+    }(chunks);
   }
-
-  ss << "]";
-
-  Info(logger_, "[StatLogger] %s",
-       ss.str().c_str());
-
 }
 
 void ZenFS::ClearFiles() {
