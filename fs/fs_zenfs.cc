@@ -453,7 +453,7 @@ void ZenFS::LogFiles() {
         if (i == extents.size() - 1) ss << "}";
         else ss << "}, ";
       }
-      ss << "], zoneid: " << zoneid;
+      ss << "], zoneid: " << zoneid << "}";
 
       Info(logger_, "[StatLogger] extent info: %s", ss.str().c_str());
     }(chunks);
