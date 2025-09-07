@@ -421,7 +421,6 @@ void ZenFS::LogFiles() {
        total_size / (1024 * 1024));
 
 
-  std::ostringstream ss;
   for (auto it = zone_lifetime_info.cbegin(); it != zone_lifetime_info.cend();
        ++it) {
     const auto& [zone_start, chunks] = *it;
@@ -431,7 +430,7 @@ void ZenFS::LogFiles() {
 
     const auto zone_total_usage = current_zone->wp_ - current_zone->start_;
     const auto invalid = (zone_total_usage - current_zone->used_capacity_);
-
+    std::ostringstream ss;
 
     ss << "{ \"id\": " << zoneid
        << ", \"lifetime\": " << current_zone->lifetime_
