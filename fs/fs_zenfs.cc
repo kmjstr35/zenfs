@@ -258,7 +258,7 @@ ZenFS::ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
   const char* period_env = getenv("ZENFS_STATLOGGER_PERIOD");
   
   if (!period_env) {
-    Info(logger, "ZENFS_STATLOGGER_PERIOD is not set, fallback as default(1s).");
+    Info(logger, "ZENFS_STATLOGGER_PERIOD is not set, fallback as default(5s).");
   } else {
     const uint32_t period = static_cast<uint32_t>(std::stoul(period_env));
     statlogger_period = period;
@@ -421,31 +421,53 @@ void ZenFS::LogFiles() {
        total_size / (1024 * 1024));
 
   Info(logger_, ":Zone Lifetime info: \n");
-  for (auto& [zone_start, chunks] : zone_lifetime_info) {
 
+  std::ostringstream ss;
+  ss << "[";
+  for (auto it = zone_lifetime_info.cbegin(); it != zone_lifetime_info.cend();
+       ++it) {
+    const auto& [zone_start, chunks] = *it;
+    
     const auto current_zone = zbd_->GetIOZone(zone_start);
     const auto zoneid = zone_start / zbd_->GetZoneSize();
-    Info(logger_, "zoneid: %" PRIu64 ", zone lifetime: %d",
-         zoneid,
-         current_zone->lifetime_);
-    
-    
-    std::sort(chunks.begin(), chunks.end(), std::greater{});
-    for (const auto& [lifetime, length, fname] : chunks) {
-      Info(logger_, "\tlifetime: %u, ratio: %g, filename: %s, extent_size: %" PRIu64,
-           lifetime,
-           (double)length / zbd_->GetZoneSize(), fname.c_str(), length);
-    }
-
 
     const auto zone_total_usage = current_zone->wp_ - current_zone->start_;
     const auto invalid = (zone_total_usage - current_zone->used_capacity_);
-    
-    Info(logger_, "invalid data size :%" PRIu64 ", ratio: %g",
-         invalid, static_cast<double>(invalid) / zone_total_usage);
+
+    const auto extent_info_str = [&](const auto& extents) {
+      std::ostringstream ss;
+      ss << "[";
+      for (size_t i = 0; i < extents.size(); ++i) {
+        const auto& [lifetime, length, fname] = extents[i];
+        ss << "{\"lifetime\": " << lifetime << ", \"extent_size\": " << length;
+        if (i == extents.size() - 1) ss << "}";
+        else ss << "}, ";
+	// Info(logger_, "\tlifetime: %u, ratio: %g, filename: %s, extent_size: %" PRIu64,
+        //      lifetime,
+        //      (double)length / zbd_->GetZoneSize(), fname.c_str(), length);
+      }
+
+      ss << "]";
+      
+
+      return ss.str();
+    }(chunks);
+
+    ss << "{ \"id\": " << zoneid
+       << ", \"lifetime\": " << current_zone->lifetime_
+    << ", \"extents\": " << extent_info_str
+    << ", \"invalid\" :" << invalid;
+
+    if (it != std::prev(zone_lifetime_info.cend())) ss << "}, ";
+    else ss << "}";
+
   }
 
-  Info(logger_, "Zone summary: num_free' %zu\n", zbd_->GetNumEmptyIoZone());
+  ss << "]";
+
+  Info(logger_, "[StatLogger] %s",
+       ss.str().c_str());
+
 }
 
 void ZenFS::ClearFiles() {
