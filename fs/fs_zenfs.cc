@@ -258,7 +258,8 @@ ZenFS::ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
   const char* period_env = getenv("ZENFS_STATLOGGER_PERIOD");
   
   if (!period_env) {
-    Info(logger, "ZENFS_STATLOGGER_PERIOD is not set, fallback as default(5s).");
+    Info(logger, "ZENFS_STATLOGGER_PERIOD is not set, disable statlogger.");
+    flag_enable_statlogger = false;
   } else {
     const uint32_t period = static_cast<uint32_t>(std::stoul(period_env));
     statlogger_period = period;
@@ -1581,8 +1582,10 @@ Status ZenFS::Mount(bool readonly) {
       run_gc_worker_ = true;
       gc_worker_.reset(new std::thread(&ZenFS::GCWorker, this));
     }
-    enable_stat_logger_ = true;
-    stat_logger_.reset(new std::thread(&ZenFS::StatLogger, this));
+    if (flag_enable_statlogger) {
+      enable_stat_logger_ = true;
+      stat_logger_.reset(new std::thread(&ZenFS::StatLogger, this));
+    }
   }
   LogFiles();
 
