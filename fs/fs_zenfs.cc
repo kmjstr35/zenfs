@@ -313,15 +313,14 @@ void ZenFS::GCWorker() {
   while (run_gc_worker_) {
     usleep(1000 * 1000 * 10);
 
-    const uint64_t num_empty_io_zone = zbd_->GetNumEmptyIoZone();
-    const uint64_t num_total_io_zone = zbd_->GetNumIoZone();
+    uint64_t non_free = zbd_->GetUsedSpace() + zbd_->GetReclaimableSpace();
+    uint64_t free = zbd_->GetFreeSpace();
+    uint64_t free_percent = (100 * free) / (free + non_free);
 
-    const auto free_ratio = (100 * num_empty_io_zone) / num_total_io_zone;
-    
     ZenFSSnapshot snapshot;
     ZenFSSnapshotOptions options;
 
-    if (free_ratio > GC_START_LEVEL) continue;
+    if (free_percent > GC_START_LEVEL) continue;
 
     options.zone_ = 1;
     options.zone_file_ = 1;
@@ -329,7 +328,7 @@ void ZenFS::GCWorker() {
 
     GetZenFSSnapshot(snapshot, options);
 
-    uint64_t threshold = (100 - GC_SLOPE * (GC_START_LEVEL - free_ratio));
+    uint64_t threshold = (100 - GC_SLOPE * (GC_START_LEVEL - free_percent));
     std::set<uint64_t> migrate_zones_start;
     for (const auto& zone : snapshot.zones_) {
       if (zone.capacity == 0) {
