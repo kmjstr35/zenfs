@@ -182,6 +182,18 @@ ZonedBlockDevice::ZonedBlockDevice(std::string path, ZbdBackendType backend,
     zbd_be_ = std::unique_ptr<ZoneFsBackend>(new ZoneFsBackend(path));
     Info(logger_, "New zonefs backing: %s", zbd_be_->GetFilename().c_str());
   }
+
+  const char *alloc_policy = getenv("ZENFS_ALLOC_POLICY");
+  if (alloc_policy && !strcmp(alloc_policy, "SLSIA")) {
+    GetLifeTimeDiff = GetLifeTimeDiff_SLSIA;
+    Info(logger_, "ZENFS_ALLOC_POLICY: SLSIA");
+  } else if (alloc_policy && !strcmp(alloc_policy, "SIA")) {
+    GetLifeTimeDiff = GetLifeTimeDiff_SIA;
+    Info(logger_, "ZENFS_ALLOC_POLICY: SIA");
+  } else {
+    GetLifeTimeDiff = GetLifeTimeDiff_vanilla;
+    Info(logger_, "ZENFS_ALLOC_POLICY: vanilla");
+  }
 }
 
 IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
@@ -392,29 +404,6 @@ ZonedBlockDevice::~ZonedBlockDevice() {
   for (const auto z : io_zones) {
     delete z;
   }
-}
-
-#define LIFETIME_DIFF_NOT_GOOD (100)
-#define LIFETIME_DIFF_COULD_BE_WORSE (50)
-
-unsigned int GetLifeTimeDiff(Env::WriteLifeTimeHint zone_lifetime,
-                             Env::WriteLifeTimeHint file_lifetime) {
-  assert(file_lifetime <= Env::WLTH_EXTREME);
-
-  if ((file_lifetime == Env::WLTH_NOT_SET) ||
-      (file_lifetime == Env::WLTH_NONE)) {
-    if ((zone_lifetime == Env::WLTH_NOT_SET) ||
-	(zone_lifetime == Env::WLTH_NONE)) {
-      return 0;
-    } else {
-      return LIFETIME_DIFF_COULD_BE_WORSE;
-    }
-  }
-
-  if (zone_lifetime > file_lifetime) return LIFETIME_DIFF_NOT_GOOD;
-  if (zone_lifetime == file_lifetime) return 0;
-
-  return LIFETIME_DIFF_NOT_GOOD;
 }
 
 IOStatus ZonedBlockDevice::AllocateMetaZone(Zone **out_meta_zone) {
@@ -722,8 +711,7 @@ IOStatus ZonedBlockDevice::TakeMigrateZone(Zone **out_zone,
 }
 
 IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
-                                          IOType io_type, Zone **out_zone,
-                                          const std::string& filename) {
+                                          IOType io_type, Zone **out_zone) {
   Zone *allocated_zone = nullptr;
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;

@@ -257,11 +257,12 @@ ZenFS::ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
 
   const char* period_env = getenv("ZENFS_STATLOGGER_PERIOD");
   
-  if (!period_env) {
+  if (!period_env || !strcmp(period_env, "0") ) {
     Info(logger, "ZENFS_STATLOGGER_PERIOD is not set, disable statlogger.");
     flag_enable_statlogger = false;
   } else {
     const uint32_t period = static_cast<uint32_t>(std::stoul(period_env));
+    Info(logger, "ZENFS_STATLOGGER_PERIOD is %s", period_env);
     statlogger_period = period;
   }
 

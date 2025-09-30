@@ -8,6 +8,8 @@
 
 #include <cstdint>
 #if !defined(ROCKSDB_LITE) && defined(OS_LINUX)
+#define LIFETIME_DIFF_NOT_GOOD (100)
+#define LIFETIME_DIFF_COULD_BE_WORSE (50)
 
 #include <errno.h>
 #include <libzbd/zbd.h>
@@ -36,7 +38,7 @@ class ZonedBlockDeviceBackend;
 class ZoneSnapshot;
 class ZenFSSnapshotOptions;
 class ZenFS;
-  
+
 class ZoneList {
  private:
   void *data_;
@@ -172,8 +174,10 @@ class ZonedBlockDevice {
   void EncodeJsonZone(std::ostream &json_stream,
                       const std::vector<Zone *> zones);
 
-public:
-  ZenFS* zenfs_ptr;
+  unsigned int (*GetLifeTimeDiff) (Env::WriteLifeTimeHint, Env::WriteLifeTimeHint) = nullptr;
+  
+ public:
+  ZenFS *zenfs_ptr;
   explicit ZonedBlockDevice(std::string path, ZbdBackendType backend,
                             std::shared_ptr<Logger> logger,
                             std::shared_ptr<ZenFSMetrics> metrics =
@@ -185,8 +189,70 @@ public:
   Zone *GetIOZone(uint64_t offset);
 
   IOStatus AllocateIOZone(Env::WriteLifeTimeHint file_lifetime, IOType io_type,
-                          Zone **out_zone,
-                          const std::string& filename);
+                          Zone **out_zone);
+
+  static unsigned int GetLifeTimeDiff_SLSIA(
+      Env::WriteLifeTimeHint zone_lifetime,
+      Env::WriteLifeTimeHint file_lifetime) {
+    assert(file_lifetime <= Env::WLTH_EXTREME);
+
+    if ((file_lifetime == Env::WLTH_NOT_SET) ||
+        (file_lifetime == Env::WLTH_NONE)) {
+      if ((zone_lifetime == Env::WLTH_NOT_SET) ||
+          (zone_lifetime == Env::WLTH_NONE)) {
+        return 0;
+      } else {
+        return LIFETIME_DIFF_COULD_BE_WORSE;
+      }
+    }
+
+    if (zone_lifetime > file_lifetime) return LIFETIME_DIFF_NOT_GOOD;
+    if (zone_lifetime == file_lifetime) return 0;
+
+    return LIFETIME_DIFF_NOT_GOOD;
+  }
+
+  static unsigned int GetLifeTimeDiff_SIA(
+      Env::WriteLifeTimeHint zone_lifetime,
+      Env::WriteLifeTimeHint file_lifetime) {
+    assert(file_lifetime <= Env::WLTH_EXTREME);
+
+    if ((file_lifetime == Env::WLTH_NOT_SET) ||
+        (file_lifetime == Env::WLTH_NONE)) {
+      if ((zone_lifetime == Env::WLTH_NOT_SET) ||
+          (zone_lifetime == Env::WLTH_NONE)) {
+        return 0;
+      } else {
+        return LIFETIME_DIFF_COULD_BE_WORSE;
+      }
+    }
+
+    if (zone_lifetime > file_lifetime) return zone_lifetime - file_lifetime;
+    if (zone_lifetime == file_lifetime) return LIFETIME_DIFF_COULD_BE_WORSE;
+
+    return LIFETIME_DIFF_NOT_GOOD;
+  }
+
+  static unsigned int GetLifeTimeDiff_vanilla(
+      Env::WriteLifeTimeHint zone_lifetime,
+      Env::WriteLifeTimeHint file_lifetime) {
+    assert(file_lifetime <= Env::WLTH_EXTREME);
+
+    if ((file_lifetime == Env::WLTH_NOT_SET) ||
+        (file_lifetime == Env::WLTH_NONE)) {
+      if (file_lifetime == zone_lifetime) {
+        return 0;
+      } else {
+        return LIFETIME_DIFF_NOT_GOOD;
+      }
+    }
+
+    if (zone_lifetime > file_lifetime) return zone_lifetime - file_lifetime;
+    if (zone_lifetime == file_lifetime) return LIFETIME_DIFF_COULD_BE_WORSE;
+
+    return LIFETIME_DIFF_NOT_GOOD;
+  }
+
   IOStatus AllocateMetaZone(Zone **out_meta_zone);
 
   uint64_t GetTotalIoSpace() const {
@@ -209,8 +275,7 @@ public:
   size_t GetNumEmptyIoZone() const {
     size_t ret = 0;
     for (const auto &zone : io_zones) {
-      if (!zone->IsBusy() && zone->IsEmpty())
-	++ret;
+      if (!zone->IsBusy() && zone->IsEmpty()) ++ret;
     }
 
     return ret;

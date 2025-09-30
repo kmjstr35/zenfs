@@ -480,9 +480,8 @@ void ZoneFile::PushExtent() {
 
 IOStatus ZoneFile::AllocateNewZone() {
   Zone* zone;
-  const auto filename = GetFilename();
-
-  IOStatus s = zbd_->AllocateIOZone(GetWriteLifeTimeHint(), io_type_, &zone, filename);
+  
+  IOStatus s = zbd_->AllocateIOZone(GetWriteLifeTimeHint(), io_type_, &zone);
 
   if (!s.ok()) return s;
   if (!zone) {
